@@ -1,12 +1,15 @@
+// Package main provides a web utility to identify the public exit IP address of the server.
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
+	"time"
 )
 
-// WTFIsMyIPData is a data representation with the same structure returned by https://wtfismyip.com/json
 type WTFIsMyIPData struct {
 	YourFuckingIPAddress   string `json:"YourFuckingIPAddress"`
 	YourFuckingLocation    string `json:"YourFuckingLocation"`
@@ -18,15 +21,35 @@ type WTFIsMyIPData struct {
 	YourFuckingCountryCode string `json:"YourFuckingCountryCode"`
 }
 
-func getIpAddressInformation(ipv6 bool) (WTFIsMyIPData, error) {
-	wtfismyipURL := "https://ipv4.wtfismyip.com/json"
-	if ipv6 {
-		wtfismyipURL = "https://ipv6.wtfismyip.com/json"
+var (
+	httpClient = &http.Client{
+		Timeout: 10 * time.Second,
 	}
-	response, err := http.Get(wtfismyipURL)
+	wtfismyipIPv4URL = "https://ipv4.wtfismyip.com/json"
+	wtfismyipIPv6URL = "https://ipv6.wtfismyip.com/json"
+)
+
+func getIpAddressInformation(ctx context.Context, ipv6 bool) (WTFIsMyIPData, error) {
+	url := wtfismyipIPv4URL
+	if ipv6 {
+		url = wtfismyipIPv6URL
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return WTFIsMyIPData{}, err
 	}
+
+	response, err := httpClient.Do(req)
+	if err != nil {
+		return WTFIsMyIPData{}, err
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			slog.Error("failed to close response body", "error", err)
+		}
+	}(response.Body)
 
 	b, err := io.ReadAll(response.Body)
 	if err != nil {
